@@ -1,6 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
 import { UserProfileData, GigItem, SeekerItem } from '../types';
-import { initialProfile, initialGigs, initialSeekers } from '../data/mockData';
 
 // Provided Supabase config
 const SUPABASE_URL = (import.meta as any).env?.VITE_SUPABASE_URL || 'https://fhziezueyewyniixrvqx.supabase.co';

@@ -1,14 +1,17 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { initialProfile, initialGigs, initialSeekers } from './data/mockData';
 import { ActiveTab, UserProfileData, GigItem, SeekerItem } from './types';
+import Auth from './components/Auth';
 import UserProfile from './components/UserProfile';
 import GigsList from './components/GigsList';
 import SeekersList from './components/SeekersList';
 import BottomMenu from './components/BottomMenu';
 import AdminPanel from './components/AdminPanel';
+import ChatComponent from './components/ChatComponent';
+import WalletDisplay from './components/WalletDisplay';
 import { Sparkles, Clock, Zap, Hourglass, Database, Wifi } from 'lucide-react';
 import { 
+  supabase,
   getDbStatus, 
   fetchProfileFromSupabase, 
   saveProfileToSupabase, 
@@ -21,12 +24,49 @@ import {
   DbTableStatus 
 } from './lib/supabase';
 
+const emptyProfile: UserProfileData = {
+  name: "New User",
+  surname: "",
+  avatar: "",
+  title: "Full-Stack Developer",
+  hourlyRate: 0,
+  bio: "",
+  skills: [],
+  email: "",
+  website: "",
+  github: "",
+  metrics: {
+    gigsCompleted: 0,
+    rating: 0,
+    hourlyRateHistory: [],
+  },
+};
+
 export default function App() {
+  const [user, setUser] = useState<any>(null);
+  const [loadingUser, setLoadingUser] = useState(true);
+
+  // Auth listener
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUser(session?.user ?? null);
+      setLoadingUser(false);
+    });
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
   const [activeTab, setActiveTab] = useState<ActiveTab>('profile');
-  const [profile, setProfile] = useState<UserProfileData>(initialProfile);
-  const [gigs, setGigs] = useState<GigItem[]>(initialGigs);
-  const [seekers, setSeekers] = useState<SeekerItem[]>(initialSeekers);
-  const [appliedGigs, setAppliedGigs] = useState<string[]>(['gig-2']);
+  const [profile, setProfile] = useState<UserProfileData>(emptyProfile);
+  const [gigs, setGigs] = useState<GigItem[]>([]);
+  const [seekers, setSeekers] = useState<SeekerItem[]>([]);
+  const [appliedGigs, setAppliedGigs] = useState<string[]>([]);
   const [showSplash, setShowSplash] = useState(true);
   const [countdown, setCountdown] = useState(2);
   const [wallpaper, setWallpaper] = useState<string | null>(() => {
@@ -59,8 +99,8 @@ export default function App() {
             setProfile(parsed);
             await saveProfileToSupabase(parsed);
           } else {
-            // Seed profile instantly in Supabase
-            await saveProfileToSupabase(initialProfile);
+            // Seed blank profile instantly in Supabase
+            await saveProfileToSupabase(emptyProfile);
           }
         }
       } else {
@@ -136,6 +176,18 @@ export default function App() {
   useEffect(() => {
     loadDatabaseState();
   }, []);
+
+  // Countdown timer for 2 seconds
+  useEffect(() => {
+    if (countdown <= 0) {
+      setShowSplash(false);
+      return;
+    }
+    const timer = setTimeout(() => {
+      setCountdown((prev) => prev - 1);
+    }, 1000);
+    return () => clearTimeout(timer);
+  }, [countdown]);
 
   // Sync / Seed Local Data to Supabase (from Admin UI)
   const handleSyncLocalToSupabase = async () => {
@@ -247,21 +299,19 @@ export default function App() {
     }
   };
 
-  // Countdown timer for 2 seconds
-  useEffect(() => {
-    if (countdown <= 0) {
-      setShowSplash(false);
-      return;
-    }
-    const timer = setTimeout(() => {
-      setCountdown((prev) => prev - 1);
-    }, 1000);
-    return () => clearTimeout(timer);
-  }, [countdown]);
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    setUser(null);
+  };
+
+  // Render Auth component if not logged in
+  if (loadingUser) return <div className="min-h-screen bg-[#FCFBF8]"></div>;
+  if (!user) return <Auth onAuthSuccess={(u) => setUser(u)} />;
+
 
 
   return (
-    <div id="root-container" className={`min-h-screen ${wallpaper ? 'bg-transparent' : 'bg-[#FCFBF8]'} text-slate-900 pb-28 font-sans relative transition-all duration-500`}>
+    <div id="root-container" className={`min-h-screen ${wallpaper ? 'bg-transparent' : 'bg-[#FCFBF8]'} text-slate-900 ${activeTab === 'chat' ? 'pb-0' : 'pb-28'} font-sans relative transition-all duration-500`}>
       {/* Dynamic Admin Wallpaper Layer */}
       {wallpaper && (
         <>
@@ -277,7 +327,7 @@ export default function App() {
             }}
           />
           <div 
-            className="fixed inset-0 bg-[#FCFBF8]/65 backdrop-blur-[2px] pointer-events-none transition-all duration-500" 
+            className="fixed inset-0 bg-white/10 backdrop-blur-xl pointer-events-none transition-all duration-500" 
             style={{ zIndex: 2 }}
           />
         </>
@@ -317,10 +367,14 @@ export default function App() {
               transition={{ duration: 0.5, ease: 'easeOut' }}
             >
               {/* South African Color Ribbon at top */}
-              <div className="h-1.5 w-full bg-gradient-to-r from-mzansi-red via-mzansi-green via-mzansi-gold to-mzansi-blue absolute top-0 left-0 right-0" />
+              {activeTab !== 'chat' && (
+                <div className="h-1.5 w-full bg-gradient-to-r from-mzansi-red via-mzansi-green via-mzansi-gold to-mzansi-blue absolute top-0 left-0 right-0" />
+              )}
+              
+              {activeTab !== 'chat' && <WalletDisplay profile={profile} />}
   
               {/* Primary Transition Screen Wrapper */}
-              <main className="relative min-h-[calc(100vh-140px)]">
+              <main className="relative min-h-screen">
                 <AnimatePresence mode="wait">
                   {activeTab === 'profile' && (
                     <motion.div
@@ -337,6 +391,7 @@ export default function App() {
                         setGigs={handleSetGigs}
                         appliedGigs={appliedGigs}
                         seekers={seekers}
+                        onLogout={handleLogout}
                       />
                     </motion.div>
                   )}
@@ -376,7 +431,19 @@ export default function App() {
                     </motion.div>
                   )}
   
-                  {activeTab === 'admin' && (
+                  {activeTab === 'chat' && (
+                    <motion.div
+                      key="chat"
+                      initial={{ opacity: 0, y: 8 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -8 }}
+                      transition={{ duration: 0.3, ease: [0.25, 1, 0.5, 1] }}
+                    >
+                      <ChatComponent />
+                    </motion.div>
+                  )}
+  
+                  {activeTab === 'admin' && user?.email === '21lucihanomatthews@gmail.com' && (
                     <motion.div
                       key="admin"
                       initial={{ opacity: 0, y: 8 }}
@@ -393,14 +460,13 @@ export default function App() {
                         syncLocalToSupabase={handleSyncLocalToSupabase}
                         isSyncing={isSyncing}
                       />
-
                     </motion.div>
                   )}
                 </AnimatePresence>
               </main>
   
               {/* Floating Bottom Menu */}
-              <BottomMenu activeTab={activeTab} setActiveTab={setActiveTab} />
+              <BottomMenu activeTab={activeTab} setActiveTab={setActiveTab} user={user} />
             </motion.div>
           )}
         </AnimatePresence>

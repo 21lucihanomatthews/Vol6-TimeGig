@@ -10,9 +10,10 @@ interface UserProfileProps {
   setGigs: (gigs: GigItem[]) => void;
   appliedGigs: string[];
   seekers: SeekerItem[];
+  onLogout: () => void;
 }
 
-export default function UserProfile({ profile, setProfile, gigs, setGigs, appliedGigs, seekers }: UserProfileProps) {
+export default function UserProfile({ profile, setProfile, gigs, setGigs, appliedGigs, seekers, onLogout }: UserProfileProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [profileTab, setProfileTab] = useState<'applications' | 'postings' | 'recruiters'>('applications');
   const [editedName, setEditedName] = useState(profile.name);
@@ -140,10 +141,10 @@ export default function UserProfile({ profile, setProfile, gigs, setGigs, applie
                   src={profile.avatar}
                   alt={fullName}
                   referrerPolicy="no-referrer"
-                  className="w-16 h-16 rounded-2xl object-cover shadow-md shadow-mzansi-green/10 border-2 border-mzansi-gold/80"
+                  className="w-28 h-28 rounded-2xl object-cover shadow-md shadow-mzansi-green/10 border-2 border-mzansi-gold/80"
                 />
               ) : (
-                <div className="w-16 h-16 rounded-2xl bg-mzansi-green text-white flex items-center justify-center font-black text-2xl tracking-tight shadow-md shadow-mzansi-green/20 uppercase border border-mzansi-gold/60">
+                <div className="w-28 h-28 rounded-2xl bg-mzansi-green text-white flex items-center justify-center font-black text-5xl tracking-tight shadow-md shadow-mzansi-green/20 uppercase border border-mzansi-gold/60">
                   {fullName.split(' ').map(n => n[0]).join('').substring(0, 3)}
                 </div>
               )}
@@ -163,6 +164,12 @@ export default function UserProfile({ profile, setProfile, gigs, setGigs, applie
             >
               <Edit2 size={13} className="text-mzansi-gold" />
               {isEditing ? '❌ Close Settings Panel' : '✍️ Edit My Profile Details'}
+            </button>
+            <button
+              onClick={onLogout}
+              className="flex items-center gap-2 px-4.5 py-2.5 border border-red-200 rounded-xl text-xs font-black bg-red-50 hover:bg-red-100 text-red-800 transition-colors cursor-pointer shadow-sm"
+            >
+              🚪 Logout
             </button>
           </div>
 

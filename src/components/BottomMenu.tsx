@@ -1,23 +1,25 @@
 import { motion } from 'motion/react';
-import { User, Briefcase, Search, Shield } from 'lucide-react';
+import { User, Briefcase, Search, Shield, MessageSquare } from 'lucide-react';
 import { ActiveTab } from '../types';
 
 interface BottomMenuProps {
   activeTab: ActiveTab;
   setActiveTab: (tab: ActiveTab) => void;
+  user: any;
 }
 
-export default function BottomMenu({ activeTab, setActiveTab }: BottomMenuProps) {
+export default function BottomMenu({ activeTab, setActiveTab, user }: BottomMenuProps) {
   const menuItems = [
     { id: 'gigs', label: 'Gigs', icon: Briefcase },
     { id: 'seekers', label: 'Seekers', icon: Search },
+    { id: 'chat', label: 'Chat', icon: MessageSquare },
     { id: 'profile', label: 'Profile', icon: User },
-    { id: 'admin', label: 'Admin', icon: Shield },
+    ...(user?.email === '21lucihanomatthews@gmail.com' ? [{ id: 'admin', label: 'Admin', icon: Shield }] : []),
   ] as const;
 
   return (
-    <div className="fixed bottom-0 left-0 right-0 z-50 bg-white/95 backdrop-blur-md border-t border-slate-200 px-4 py-1.5 md:py-2 flex items-center justify-center shadow-[0_-4px_20px_-4px_rgba(148,163,184,0.08)]">
-      <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl w-full max-w-sm">
+    <div className="fixed bottom-6 left-0 right-0 z-50 px-4 flex justify-center pointer-events-none">
+      <div className="flex items-center gap-3 p-2 bg-white/40 backdrop-blur-xl rounded-full border border-white/20 shadow-[0_8px_32px_rgba(0,0,0,0.12)] pointer-events-auto">
         {menuItems.map((item) => {
           const Icon = item.icon;
           const isActive = activeTab === item.id;
@@ -26,24 +28,31 @@ export default function BottomMenu({ activeTab, setActiveTab }: BottomMenuProps)
             <button
               key={item.id}
               id={`tab-btn-${item.id}`}
-              onClick={() => setActiveTab(item.id)}
-              className="relative flex-1 h-10 md:h-12 flex flex-col items-center justify-center gap-0.5 transition-all rounded-lg cursor-pointer select-none group"
+              onClick={() => setActiveTab(item.id as ActiveTab)}
+              className="relative flex flex-col items-center justify-center transition-all cursor-pointer select-none group"
             >
+              <div className={`
+                flex items-center justify-center p-3 rounded-full transition-all duration-300
+                ${isActive 
+                  ? 'bg-indigo-600 text-white shadow-lg -translate-y-1' 
+                  : 'bg-white text-slate-500 hover:bg-indigo-50 hover:text-indigo-600 shadow-sm'
+                }
+              `}>
+                <Icon size={20} strokeWidth={isActive ? 2.5 : 2} />
+              </div>
+              
               {isActive && (
-                <motion.div
-                  layoutId="active-pill"
-                  className="absolute inset-0 bg-mzansi-green rounded-lg shadow-md shadow-mzansi-green/20 border border-mzansi-gold/30"
-                  transition={{ type: "spring", stiffness: 350, damping: 30 }}
-                />
+                <motion.div 
+                  layoutId="bubble-label"
+                  className="absolute -bottom-6 flex flex-col items-center"
+                  initial={{ opacity: 0, y: -5 }}
+                  animate={{ opacity: 1, y: 0 }}
+                >
+                  <span className="text-[10px] font-bold text-indigo-600 bg-white px-2 py-0.5 rounded-full shadow-sm border border-indigo-100 whitespace-nowrap">
+                    {item.label}
+                  </span>
+                </motion.div>
               )}
-
-              <span className={`relative z-10 transition-transform duration-250 ${isActive ? 'scale-105 text-white' : 'text-slate-600 group-hover:text-mzansi-green'}`}>
-                <Icon size={14} strokeWidth={isActive ? 2.2 : 1.8} />
-              </span>
-
-              <span className={`relative z-10 text-[8px] md:text-[9.5px] font-black uppercase tracking-wider transition-colors duration-200 ${isActive ? 'text-white' : 'text-slate-500 group-hover:text-mzansi-green'}`}>
-                {item.label}
-              </span>
             </button>
           );
         })}

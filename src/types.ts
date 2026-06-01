@@ -1,4 +1,4 @@
-export type ActiveTab = 'profile' | 'gigs' | 'seekers' | 'admin';
+export type ActiveTab = 'profile' | 'gigs' | 'seekers' | 'admin' | 'chat';
 
 export interface UserProfileData {
   name: string;
@@ -15,7 +15,27 @@ export interface UserProfileData {
     gigsCompleted: number;
     rating: number;
     hourlyRateHistory: { date: string; rate: number }[];
+    coinBalance?: number;
   };
+}
+
+export interface PaymentRequest {
+  id: string;
+  userId: string;
+  coinPackageId: string;
+  amount: number;
+  status: 'pending' | 'approved' | 'rejected';
+  proofOfPaymentUrl?: string;
+  createdAt: string;
+}
+
+export interface ChatMessage {
+  id: string;
+  sender_id: string;
+  recipient_id: string;
+  content: string;
+  type: 'text' | 'image' | 'video' | 'voice';
+  createdAt: string;
 }
 
 export interface GigItem {
