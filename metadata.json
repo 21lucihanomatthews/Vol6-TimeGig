@@ -1,0 +1,6 @@
+{
+  "name": "TimeGIG",
+  "description": "A simplified, high-fidelity gigs and seekers platform designed to be extremely easy to use, featuring a 4-second splash introduction and dummy-proof directories.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
