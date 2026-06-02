@@ -11,6 +11,7 @@ export interface UserProfileData {
   email: string;
   website: string;
   github: string;
+  coinBalance?: number;
   metrics: {
     gigsCompleted: number;
     rating: number;

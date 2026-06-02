@@ -14,6 +14,7 @@ export interface DbTableStatus {
   seekersExists: boolean;
   appliedGigsExists: boolean;
   paymentRequestsExists: boolean;
+  settingsExists: boolean;
   chatMessagesExists: boolean;
   error?: string;
 }
@@ -100,21 +101,32 @@ CREATE POLICY "Public applications access" ON applied_gigs FOR ALL USING (true) 
 -- 5. Create Payment Requests Table
 CREATE TABLE IF NOT EXISTS payment_requests (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id uuid NOT NULL REFERENCES profile(id),
+  user_id uuid NOT NULL,
   coin_package_id text NOT NULL,
   amount numeric NOT NULL,
   status text DEFAULT 'pending',
   proof_of_payment_url text,
-  created_at timestamp with time zone DEFAULT now()
+  created_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT fk_user FOREIGN KEY (user_id) REFERENCES profile(id) ON DELETE CASCADE
 );
 
+-- Ensure columns and FKs exist even if table was created previously
+DO $$
+BEGIN
+    -- Add proof column if missing
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='payment_requests' AND column_name='proof_of_payment_url') THEN
+        ALTER TABLE payment_requests ADD COLUMN proof_of_payment_url text;
+    END IF;
+
+    -- Add FK if missing
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_user') THEN
+        ALTER TABLE payment_requests ADD CONSTRAINT fk_user FOREIGN KEY (user_id) REFERENCES profile(id) ON DELETE CASCADE;
+    END IF;
+END $$;
+
 ALTER TABLE payment_requests ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS "Users can create their own payment requests" ON payment_requests;
-CREATE POLICY "Users can create their own payment requests" ON payment_requests FOR INSERT WITH CHECK (auth.uid() = user_id);
-DROP POLICY IF EXISTS "Users can view their own payment requests" ON payment_requests;
-CREATE POLICY "Users can view their own payment requests" ON payment_requests FOR SELECT USING (auth.uid() = user_id);
-DROP POLICY IF EXISTS "Admins can view all payment requests" ON payment_requests;
-CREATE POLICY "Admins can view all payment requests" ON payment_requests FOR SELECT USING (true);
+DROP POLICY IF EXISTS "Public payment requests access" ON payment_requests;
+CREATE POLICY "Public payment requests access" ON payment_requests FOR ALL USING (true) WITH CHECK (true);
 
 -- 6. Create Chat Messages Table
 CREATE TABLE IF NOT EXISTS chat_messages (
@@ -131,8 +143,42 @@ DROP POLICY IF EXISTS "Public chat access" ON chat_messages;
 CREATE POLICY "Public chat access" ON chat_messages FOR ALL USING (true) WITH CHECK (true);
 
 -- 7. Enable Realtime for relevant tables
-ALTER PUBLICATION supabase_realtime ADD TABLE payment_requests;
-ALTER PUBLICATION supabase_realtime ADD TABLE profile;
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_publication_tables 
+        WHERE pubname = 'supabase_realtime' 
+        AND schemaname = 'public' 
+        AND tablename = 'payment_requests'
+    ) THEN
+        ALTER PUBLICATION supabase_realtime ADD TABLE payment_requests;
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_publication_tables 
+        WHERE pubname = 'supabase_realtime' 
+        AND schemaname = 'public' 
+        AND tablename = 'profile'
+    ) THEN
+        ALTER PUBLICATION supabase_realtime ADD TABLE profile;
+    END IF;
+END $$;
+
+-- 8. Create Settings Table
+CREATE TABLE IF NOT EXISTS settings (
+  key text PRIMARY KEY,
+  value jsonb NOT NULL,
+  updated_at timestamp with time zone DEFAULT now()
+);
+
+-- Seed Bank Details if not exist
+INSERT INTO settings (key, value)
+VALUES ('bank_details', '{"bank": "Capitec", "account": "1334067366", "name": "Matthews"}')
+ON CONFLICT (key) DO NOTHING;
+
+ALTER TABLE settings ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Public settings access" ON settings;
+CREATE POLICY "Public settings access" ON settings FOR ALL USING (true) WITH CHECK (true);
 `;
 
 // Probe tables to see if they exist
@@ -143,12 +189,20 @@ export async function getDbStatus(): Promise<DbTableStatus> {
     seekersExists: false,
     appliedGigsExists: false,
     paymentRequestsExists: false,
+    settingsExists: false,
     chatMessagesExists: false
   };
 
   try {
     // Check profile
     const { error: profileErr } = await supabase.from('profile').select('id').limit(1).maybeSingle();
+    
+    // If it's a network error (Failed to fetch), mark it in result
+    if (profileErr && profileErr.message.includes('fetch')) {
+      result.error = "Connection Failed: Could not reach Supabase. Check your internet or project status.";
+      return result;
+    }
+    
     result.profileExists = !profileErr || profileErr.code !== '42P01';
 
     // Check gigs
@@ -166,6 +220,10 @@ export async function getDbStatus(): Promise<DbTableStatus> {
     // Check payment_requests
     const { error: paymentsErr } = await supabase.from('payment_requests').select('id').limit(1);
     result.paymentRequestsExists = !paymentsErr || paymentsErr.code !== '42P01';
+
+    // Check settings
+    const { error: settingsErr } = await supabase.from('settings').select('key').limit(1);
+    result.settingsExists = !settingsErr || settingsErr.code !== '42P01';
 
     // Check chat_messages
     const { error: chatErr } = await supabase.from('chat_messages').select('id').limit(1);
@@ -205,6 +263,7 @@ export async function fetchProfileFromSupabase(userId: string): Promise<UserProf
         email: data.email,
         website: data.website || '',
         github: data.github || '',
+        coinBalance: Number(data.coin_balance || 0),
         metrics: typeof data.metrics === 'object' ? data.metrics : JSON.parse(data.metrics || '{}'),
       };
     }
@@ -230,6 +289,7 @@ export async function saveProfileToSupabase(userId: string, profile: UserProfile
       email: profile.email,
       website: profile.website || '',
       github: profile.github || '',
+      coin_balance: profile.coinBalance || 0,
       metrics: profile.metrics, // jsonb type takes object directly
       updated_at: new Date().toISOString()
     };

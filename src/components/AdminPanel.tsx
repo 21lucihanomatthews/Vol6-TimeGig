@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Shield, UploadCloud, Trash2, Image, Key, Check, Info, FileImage, Sparkles, RefreshCw, Database, AlertTriangle, Server, Code, Copy, ExternalLink, HardDrive, CheckCircle2 } from 'lucide-react';
+import { Shield, UploadCloud, Trash2, Image, Key, Check, Info, FileImage, Sparkles, RefreshCw, Database, AlertTriangle, Server, Code, Copy, ExternalLink, HardDrive, CheckCircle2, Wifi } from 'lucide-react';
 import { DbTableStatus, SQL_SCHEMA } from '../lib/supabase';
 import AdminUsersSection from './AdminUsersSection';
 import AdminPaymentsSection from './AdminPaymentsSection';
+import AdminTreasurySection from './AdminTreasurySection';
+import { supabase } from '../lib/supabase';
 
 interface AdminPanelProps {
   onWallpaperChange: (newWallpaper: string | null) => void;
@@ -88,8 +90,16 @@ export default function AdminPanel({
   }
 
   return (
-    <div id="admin-panel-container" className="w-full max-w-2xl mx-auto px-4 pb-24 pt-6 space-y-6">
-      {(!dbStatus?.profileExists || !dbStatus?.paymentRequestsExists) && (
+    <div id="admin-panel-container" className="w-full max-w-2xl mx-auto px-4 pb-32 pt-6 space-y-6">
+      {dbStatus?.error && (
+        <div className="bg-red-50 p-4 rounded-2xl border border-red-200 text-red-800 text-xs font-bold flex items-center gap-3">
+          <Wifi size={16} className="text-red-500 animate-pulse" />
+          <span>{dbStatus.error}</span>
+          <button onClick={recheckDb} className="ml-auto underline decoration-red-300">Retry Connection</button>
+        </div>
+      )}
+
+      {(!dbStatus?.profileExists || !dbStatus?.paymentRequestsExists) && !dbStatus?.error && (
         <div className="bg-amber-50 p-7 rounded-[40px] border border-amber-200/50 shadow-sm relative overflow-hidden">
           <div className="absolute top-0 right-0 w-32 h-32 bg-amber-200/20 rounded-bl-full -z-10" />
           <div className="flex items-start gap-5">
@@ -122,6 +132,7 @@ export default function AdminPanel({
       )}
       
       <AdminUsersSection onlineUsers={onlineUsers} />
+      <AdminTreasurySection />
       <AdminPaymentsSection />
 
       {/* Admin Header */}

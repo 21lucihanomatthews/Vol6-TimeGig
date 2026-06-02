@@ -1,5 +1,5 @@
-import { X, Upload, CheckCircle2, FileText, AlertCircle } from 'lucide-react';
-import React, { useState, useRef } from 'react';
+import { X, Upload, CheckCircle2, FileText, AlertCircle, Bookmark } from 'lucide-react';
+import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { supabase } from '../lib/supabase';
 
@@ -16,8 +16,34 @@ export default function TopupModal({ onClose }: { onClose: () => void }) {
   const [selected, setSelected] = useState<typeof PACKAGES[0] | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [isSent, setIsSent] = useState(false);
+  const [isAutoApproved, setIsAutoApproved] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [bankDetails, setBankDetails] = useState({
+    bank: 'Capitec',
+    account: '1334067366',
+    name: 'Matthews'
+  });
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    fetchBankDetails();
+  }, []);
+
+  const fetchBankDetails = async () => {
+    try {
+      const { data } = await supabase
+        .from('settings')
+        .select('value')
+        .eq('key', 'bank_details')
+        .maybeSingle();
+      
+      if (data?.value) {
+        setBankDetails(data.value);
+      }
+    } catch (err) {
+      console.error('Error fetching dynamic bank details:', err);
+    }
+  };
 
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -40,26 +66,144 @@ export default function TopupModal({ onClose }: { onClose: () => void }) {
 
       // 1. Convert file to base64 (for demo simplicity, real apps use storage buckets)
       const reader = new FileReader();
-      const base64Promise = new Promise<string>((resolve) => {
+      const base64Promise = new Promise<string>((resolve, reject) => {
         reader.onload = () => resolve(reader.result as string);
+        reader.onerror = () => reject(new Error('Failed to read the file. Please try a different document.'));
         reader.readAsDataURL(file);
       });
       
       const proofBase64 = await base64Promise;
+      
+      // 1.5 NEW: Automatic AI verification
+      setIsUploading(true); 
+      let autoApproved = false;
+      let verificationMessage = "";
 
-      // 2. Insert into Supabase
-      const { error: insertError } = await supabase
+      try {
+        const verifyRes = await fetch('/api/verify-payment', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ image: proofBase64 })
+        });
+        
+        if (verifyRes.ok) {
+          const verification = await verifyRes.json();
+          console.log('AI verification result:', verification);
+          
+          if (!verification.isValid) {
+            throw new Error(`AI Rejected Proof: ${verification.message}. Please upload a clear bank receipt.`);
+          }
+          
+          autoApproved = verification.isValid && !verification.isTransientError;
+        } else {
+          console.warn('AI verification service returned non-OK status. Falling back to manual review.');
+        }
+      } catch (verifyErr: any) {
+        // If it's an explicit AI rejection, we re-throw to show the error
+        if (verifyErr.message.includes('AI Rejected Proof')) {
+          throw verifyErr;
+        }
+        console.error('AI verification failed (transient):', verifyErr);
+        // Otherwise we just continue as pending
+      }
+
+      setIsAutoApproved(autoApproved);
+
+      // 2. Ensure profile exists in data store to prevent foreign key failure
+      const { data: existingProfile, error: profileCheckError } = await supabase
+        .from('profile')
+        .select('id, coin_balance, metrics')
+        .eq('id', user.id)
+        .maybeSingle();
+
+      if (profileCheckError) {
+        console.error('Error checking profile:', profileCheckError);
+        throw new Error('System error verifying your profile. Please contact support.');
+      }
+
+      let profileId = user.id;
+      let finalProfile = existingProfile;
+
+      if (!existingProfile) {
+        console.log('Profile missing in DB, creating now...');
+        const localStr = localStorage.getItem('timegig_local_profile');
+        const profileData = localStr ? JSON.parse(localStr) : {
+          name: user.email?.split('@')[0] || 'Member',
+          surname: '',
+          email: user.email || '',
+          title: 'Member',
+          hourlyRate: 0,
+          bio: '',
+          skills: [],
+          metrics: { rating: 5, gigsCompleted: 0, hourlyRateHistory: [] },
+          coin_balance: 0
+        };
+
+        const { data: newProfile, error: profileUpsertError } = await supabase.from('profile').upsert({
+          id: user.id,
+          name: profileData.name,
+          surname: profileData.surname,
+          email: profileData.email,
+          title: profileData.title,
+          hourly_rate: profileData.hourlyRate,
+          bio: profileData.bio,
+          skills: profileData.skills,
+          metrics: profileData.metrics,
+          coin_balance: profileData.coin_balance || 0
+        }).select().single();
+
+        if (profileUpsertError) {
+          console.error('Profile creation failed:', profileUpsertError);
+          throw new Error('Failed to synchronize your account profile. Please try again.');
+        }
+        finalProfile = newProfile;
+      }
+
+      // 3. Insert into Supabase
+      const { data: insertData, error: insertError } = await supabase
         .from('payment_requests')
         .insert({
           user_id: user.id,
           amount: selected.amount,
           coin_package_id: selected.id,
           proof_of_payment_url: proofBase64,
-          status: 'pending'
-        });
+          status: autoApproved ? 'approved' : 'pending' 
+        })
+        .select();
 
-      if (insertError) throw insertError;
+      if (insertError) {
+        console.error('Database insert error:', insertError);
+        throw new Error(`Data storage failed: ${insertError.message}. Ensure your proof is under 2MB.`);
+      }
 
+      // 4. Update user balance ONLY if auto-approved
+      if (finalProfile && autoApproved) {
+        const coinsToAdd = selected.coins;
+        const currentBalance = Number(finalProfile.coin_balance || 0);
+        const newBalance = currentBalance + coinsToAdd;
+        
+        const currentMetrics = typeof finalProfile.metrics === 'string' ? JSON.parse(finalProfile.metrics) : finalProfile.metrics;
+        const updatedMetrics = {
+          ...currentMetrics,
+          coinBalance: newBalance
+        };
+
+        const { error: walletError } = await supabase
+          .from('profile')
+          .update({ 
+            metrics: updatedMetrics,
+            coin_balance: newBalance 
+          })
+          .eq('id', user.id);
+
+        if (walletError) {
+          console.error('Auto-credit error:', walletError);
+          setError('Proof verified and saved, but balance update failed. Admin will manually credit you.');
+          // Don't throw, since the request IS saved as approved
+        }
+      }
+
+      console.log('Payment request approved and processed:', insertData);
       setIsSent(true);
       // Automatically close or stay to show success
       setTimeout(() => {
@@ -92,8 +236,14 @@ export default function TopupModal({ onClose }: { onClose: () => void }) {
             <div className="w-20 h-20 bg-green-100 text-green-600 rounded-full flex items-center justify-center mb-2">
               <CheckCircle2 size={40} />
             </div>
-            <h3 className="text-2xl font-black text-slate-900">Payment Sent!</h3>
-            <p className="text-slate-500 max-w-xs mx-auto">We've received your proof of payment. Your coins will be added shortly.</p>
+            <h3 className="text-2xl font-black text-slate-900">
+              {isAutoApproved ? 'Payment Verified!' : 'Proof Received'}
+            </h3>
+            <p className="text-slate-500 max-w-xs mx-auto">
+              {isAutoApproved 
+                ? 'AI has verified your proof. TimeGIG coins have been added to your wallet automatically.'
+                : 'The AI service is busy, so your proof was submitted for manual admin review. Coins will be added shortly.'}
+            </p>
           </div>
         ) : !selected ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -123,15 +273,15 @@ export default function TopupModal({ onClose }: { onClose: () => void }) {
             <div className="bg-slate-50 border border-slate-100 p-6 rounded-3xl space-y-3">
               <div className="flex justify-between items-center text-sm">
                 <span className="text-slate-400 font-medium">Bank</span>
-                <span className="font-bold text-slate-900">Capitec</span>
+                <span className="font-bold text-slate-900">{bankDetails.bank}</span>
               </div>
               <div className="flex justify-between items-center text-sm">
                 <span className="text-slate-400 font-medium">Account</span>
-                <span className="font-bold text-slate-900 tracking-wider">1334067366</span>
+                <span className="font-bold text-slate-900 tracking-wider">{bankDetails.account}</span>
               </div>
               <div className="flex justify-between items-center text-sm">
                 <span className="text-slate-400 font-medium">Name</span>
-                <span className="font-bold text-slate-900">Matthews</span>
+                <span className="font-bold text-slate-900">{bankDetails.name}</span>
               </div>
               <div className="flex justify-between items-center text-sm">
                 <span className="text-slate-400 font-medium">Reference</span>
