@@ -77,9 +77,44 @@ export default function App() {
   const [dbStatus, setDbStatus] = useState<DbTableStatus | null>(null);
   const [isCheckingDb, setIsCheckingDb] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [onlineUsers, setOnlineUsers] = useState<Set<string>>(new Set());
+
+  // Presence Tracking
+  useEffect(() => {
+    if (!user) return;
+
+    const channel = supabase.channel('online_users_channel');
+
+    channel
+      .on('presence', { event: 'sync' }, () => {
+        const state = channel.presenceState();
+        const onlineIds = new Set<string>();
+        
+        Object.values(state).forEach((presences: any) => {
+          presences.forEach((p: any) => {
+            if (p.user_id) onlineIds.add(p.user_id);
+          });
+        });
+        
+        setOnlineUsers(onlineIds);
+      })
+      .subscribe(async (status) => {
+        if (status === 'SUBSCRIBED') {
+          await channel.track({
+            user_id: user.id,
+            online_at: new Date().toISOString(),
+          });
+        }
+      });
+
+    return () => {
+      channel.unsubscribe();
+    };
+  }, [user]);
 
   // Check database table presence & run initial loading
   const loadDatabaseState = async (silently = false) => {
+    if (!user) return;
     if (!silently) setIsCheckingDb(true);
     try {
       const status = await getDbStatus();
@@ -87,7 +122,7 @@ export default function App() {
 
       // 1. Sync Profile
       if (status.profileExists) {
-        const dbProfile = await fetchProfileFromSupabase();
+        const dbProfile = await fetchProfileFromSupabase(user.id);
         if (dbProfile) {
           setProfile(dbProfile);
           localStorage.setItem('timegig_local_profile', JSON.stringify(dbProfile));
@@ -97,10 +132,10 @@ export default function App() {
           if (localStr) {
             const parsed = JSON.parse(localStr);
             setProfile(parsed);
-            await saveProfileToSupabase(parsed);
+            await saveProfileToSupabase(user.id, parsed);
           } else {
             // Seed blank profile instantly in Supabase
-            await saveProfileToSupabase(emptyProfile);
+            await saveProfileToSupabase(user.id, emptyProfile);
           }
         }
       } else {
@@ -174,8 +209,10 @@ export default function App() {
 
   // Run on mount
   useEffect(() => {
-    loadDatabaseState();
-  }, []);
+    if (user) {
+      loadDatabaseState();
+    }
+  }, [user]);
 
   // Countdown timer for 2 seconds
   useEffect(() => {
@@ -191,6 +228,7 @@ export default function App() {
 
   // Sync / Seed Local Data to Supabase (from Admin UI)
   const handleSyncLocalToSupabase = async () => {
+    if (!user) return;
     setIsSyncing(true);
     try {
       const status = await getDbStatus();
@@ -199,7 +237,7 @@ export default function App() {
       }
 
       if (status.profileExists) {
-        await saveProfileToSupabase(profile);
+        await saveProfileToSupabase(user.id, profile);
       }
       if (status.gigsExists) {
         for (const gig of gigs) {
@@ -228,8 +266,8 @@ export default function App() {
   const handleSetProfile = async (newProfile: UserProfileData) => {
     setProfile(newProfile);
     localStorage.setItem('timegig_local_profile', JSON.stringify(newProfile));
-    if (dbStatus?.profileExists) {
-      await saveProfileToSupabase(newProfile);
+    if (dbStatus?.profileExists && user) {
+      await saveProfileToSupabase(user.id, newProfile);
     }
   };
 
@@ -459,6 +497,7 @@ export default function App() {
                         recheckDb={() => loadDatabaseState(false)}
                         syncLocalToSupabase={handleSyncLocalToSupabase}
                         isSyncing={isSyncing}
+                        onlineUsers={onlineUsers}
                       />
                     </motion.div>
                   )}

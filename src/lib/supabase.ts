@@ -13,33 +13,37 @@ export interface DbTableStatus {
   gigsExists: boolean;
   seekersExists: boolean;
   appliedGigsExists: boolean;
+  paymentRequestsExists: boolean;
+  chatMessagesExists: boolean;
   error?: string;
 }
 
-export const SQL_SCHEMA = `-- TimeGIG SA Supabase Setup Script 🇿🇦
+export const SQL_SCHEMA = `-- TimeGIG SA Complete Database Setup 🇿🇦
 -- Copy and paste this script into your Supabase SQL Editor (Dashboard -> SQL Editor -> New Query)
 -- Then hit "Run" to establish all backend storage structures!
 
 -- 1. Create Profile Table
 CREATE TABLE IF NOT EXISTS profile (
-  id text PRIMARY KEY,
+  id uuid PRIMARY KEY DEFAULT auth.uid(),
   name text NOT NULL,
   surname text,
   avatar text,
-  title text NOT NULL,
-  hourly_rate numeric NOT NULL,
+  title text NOT NULL DEFAULT 'Member',
+  hourly_rate numeric NOT NULL DEFAULT 0,
   bio text,
-  skills jsonb NOT NULL,
+  skills jsonb NOT NULL DEFAULT '[]',
   email text NOT NULL,
   website text,
   github text,
-  metrics jsonb NOT NULL,
+  metrics jsonb NOT NULL DEFAULT '{"rating": 5, "gigsCompleted": 0, "hourlyRateHistory": []}',
+  coin_balance numeric DEFAULT 0,
   created_at timestamp with time zone DEFAULT now(),
   updated_at timestamp with time zone DEFAULT now()
 );
 
--- Enable Row Level Security (RLS) or allow public read/write for non-auth demos
+-- Enable RLS for Profile
 ALTER TABLE profile ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Public profile access" ON profile;
 CREATE POLICY "Public profile access" ON profile FOR ALL USING (true) WITH CHECK (true);
 
 -- 2. Create Gigs Table
@@ -61,6 +65,7 @@ CREATE TABLE IF NOT EXISTS gigs (
 );
 
 ALTER TABLE gigs ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Public gigs access" ON gigs;
 CREATE POLICY "Public gigs access" ON gigs FOR ALL USING (true) WITH CHECK (true);
 
 -- 3. Create Seekers Table
@@ -78,6 +83,7 @@ CREATE TABLE IF NOT EXISTS seekers (
 );
 
 ALTER TABLE seekers ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Public seekers access" ON seekers;
 CREATE POLICY "Public seekers access" ON seekers FOR ALL USING (true) WITH CHECK (true);
 
 -- 4. Create Applied Gigs Table
@@ -88,41 +94,45 @@ CREATE TABLE IF NOT EXISTS applied_gigs (
 );
 
 ALTER TABLE applied_gigs ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Public applications access" ON applied_gigs;
 CREATE POLICY "Public applications access" ON applied_gigs FOR ALL USING (true) WITH CHECK (true);
 
--- 5. Seed Initial Mzansi Developer Profile
-INSERT INTO profile (id, name, surname, avatar, title, hourly_rate, bio, skills, email, website, github, metrics)
-VALUES (
-  'current_user',
-  'Sipho',
-  'Khumalo',
-  '',
-  'Senior Full-Stack & Tailwind Developer',
-  450,
-  'Howzit! I''m Sipho, a passionate developer based in Cape Town. I build extremely easy-to-use modern React web apps and high-performance Tailwind systems for South African startups and international partners. Let''s grow your digital presence!',
-  '["React", "TypeScript", "Tailwind CSS", "WordPress", "Node.js", "SEO Coding", "No-Code Apps"]',
-  'sipho.khumalo@timegig.co.za',
-  'https://siphocode.co.za',
-  'https://github.com/siphokhumalo',
-  '{"rating": 4.95, "gigsCompleted": 58, "hourlyRateHistory": [{"rate": 300, "date": "Jan"}, {"rate": 380, "date": "Mar"}, {"rate": 450, "date": "Jun"}]}'
-) ON CONFLICT (id) DO NOTHING;
+-- 5. Create Payment Requests Table
+CREATE TABLE IF NOT EXISTS payment_requests (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL REFERENCES profile(id),
+  coin_package_id text NOT NULL,
+  amount numeric NOT NULL,
+  status text DEFAULT 'pending',
+  proof_of_payment_url text,
+  created_at timestamp with time zone DEFAULT now()
+);
 
--- 6. Seed Initial South African Gigs
-INSERT INTO gigs (id, title, company, description, budget, payment_type, duration, tags, location, difficulty, created_at, picture, pictures)
-VALUES
-('gig-1', 'Upload 50 Rooibos Tea Product Images to WooCommerce Shop', 'Berg River Proteas Co.', 'Easy casual content entry task! We have the product pictures and text descriptions catalogued neatly in a Google Drive folder.', 950, 'Fixed', '1 day', '["WordPress", "No-Code Apps"]', 'Remote', 'Entry', '1h ago', 'https://images.unsplash.com/photo-1597481499750-3e6b22637e12?auto=format&fit=crop&q=80&w=300', '["https://images.unsplash.com/photo-1597481499750-3e6b22637e12?auto=format&fit=crop&q=80&w=400"]'),
-('gig-2', 'Update Tailwind Style Palette on Biltong App Checkout Page', 'Jozi Meats Ltd', 'Tweak our POS web layout buttons. Change our primary brand styling to simple warm South African themed colors.', 350, 'Hourly', '2 hours', '["Tailwind CSS", "React"]', 'Remote', 'Entry', '4h ago', 'https://images.unsplash.com/photo-1563013544-824ae1d704d3?auto=format&fit=crop&q=80&w=300', '["https://images.unsplash.com/photo-1563013544-824ae1d704d3?auto=format&fit=crop&q=80&w=400"]'),
-('gig-3', 'Configure Dynamic Touch Photo Gallery for Kruger Safari Site', 'Kruger Escape Safaris', 'Build an interactive, lightweight image carousel utilizing responsive motion/react.', 1800, 'Fixed', '4 hours', '["React", "Tailwind CSS"]', 'Remote', 'Intermediate', '1d ago', 'https://images.unsplash.com/photo-1547471080-7cc2caa01a7e?auto=format&fit=crop&q=80&w=300', '["https://images.unsplash.com/photo-1547471080-7cc2caa01a7e?auto=format&fit=crop&q=80&w=400"]'),
-('gig-4', 'Insert Multi-language Zulu/Xhosa Plain Placeholders in Contact Page', 'Township Commerce Hub', 'We have compiled lists of simple text translations in a text note. Modify our single static forms file.', 1200, 'Fixed', '1 day', '["React", "TypeScript"]', 'Remote', 'Intermediate', '2d ago', 'https://images.unsplash.com/photo-1434030216411-0b793f4b4173?auto=format&fit=crop&q=80&w=300', '["https://images.unsplash.com/photo-1434030216411-0b793f4b4173?auto=format&fit=crop&q=80&w=400"]'),
-('gig-5', 'Refactor Squished Mobile Grid Padding for Solar Status Widget', 'GreenCape Power SA', 'Adjust responsive layout boundaries on our loadshedding layout widget.', 450, 'Hourly', '3 hours', '["Tailwind CSS", "React"]', 'Remote', 'Entry', '3d ago', 'https://images.unsplash.com/photo-1509391366360-2e959784a276?auto=format&fit=crop&q=80&w=300', '["https://images.unsplash.com/photo-1509391366360-2e959784a276?auto=format&fit=crop&q=80&w=400"]');
+ALTER TABLE payment_requests ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Users can create their own payment requests" ON payment_requests;
+CREATE POLICY "Users can create their own payment requests" ON payment_requests FOR INSERT WITH CHECK (auth.uid() = user_id);
+DROP POLICY IF EXISTS "Users can view their own payment requests" ON payment_requests;
+CREATE POLICY "Users can view their own payment requests" ON payment_requests FOR SELECT USING (auth.uid() = user_id);
+DROP POLICY IF EXISTS "Admins can view all payment requests" ON payment_requests;
+CREATE POLICY "Admins can view all payment requests" ON payment_requests FOR SELECT USING (true);
 
--- 7. Seed Initial Seekers (Recruiters)
-INSERT INTO seekers (id, name, company, avatar, title, description, budget, skills_needed, contact_status)
-VALUES
-('seeker-1', 'Lindiwe Dlamini', 'Mzansi Tech Launchpad', 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&q=80&w=200&h=200', 'Talent Acquisition Officer', 'Howzit! We are looking for energetic, hard-working South African youth developers to build landing layouts.', 'R300 - R480 / hr', '["React", "Tailwind CSS", "TypeScript"]', 'idle'),
-('seeker-2', 'Thabo Ndlovu', 'Table Mountain Agencies', 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=200&h=200', 'Digital Project Lead', 'Hiring creative frontend freelancers who understand clean web layouts.', 'R400 - R600 / hr', '["React", "SEO Coding", "Tailwind CSS"]', 'idle'),
-('seeker-3', 'Pieter Botha', 'Bantu Creative Labs', 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&q=80&w=200&h=200', 'Product Specialist', 'Looking for a reliable developer to setup our WordPress store API integration with local payment portals.', 'R35 000 Flat', '["WordPress", "React", "TypeScript"]', 'idle'),
-('seeker-4', 'Karabo Molefe', 'SolarSphere South Africa', 'https://images.unsplash.com/photo-1567532939604-b6b5b0db2604?auto=format&fit=crop&q=80&w=200&h=200', 'HR Director', 'Seeking a technical partner to maintain our client onboarding templates.', 'R350 - R500 / hr', '["React", "TypeScript", "Tailwind CSS"]', 'idle');
+-- 6. Create Chat Messages Table
+CREATE TABLE IF NOT EXISTS chat_messages (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  sender_id uuid NOT NULL,
+  recipient_id uuid NOT NULL,
+  content text NOT NULL,
+  type text CHECK (type IN ('text', 'image')) DEFAULT 'text',
+  created_at timestamp with time zone DEFAULT now()
+);
+
+ALTER TABLE chat_messages ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Public chat access" ON chat_messages;
+CREATE POLICY "Public chat access" ON chat_messages FOR ALL USING (true) WITH CHECK (true);
+
+-- 7. Enable Realtime for relevant tables
+ALTER PUBLICATION supabase_realtime ADD TABLE payment_requests;
+ALTER PUBLICATION supabase_realtime ADD TABLE profile;
 `;
 
 // Probe tables to see if they exist
@@ -131,7 +141,9 @@ export async function getDbStatus(): Promise<DbTableStatus> {
     profileExists: false,
     gigsExists: false,
     seekersExists: false,
-    appliedGigsExists: false
+    appliedGigsExists: false,
+    paymentRequestsExists: false,
+    chatMessagesExists: false
   };
 
   try {
@@ -151,6 +163,14 @@ export async function getDbStatus(): Promise<DbTableStatus> {
     const { error: appliedErr } = await supabase.from('applied_gigs').select('id').limit(1);
     result.appliedGigsExists = !appliedErr || appliedErr.code !== '42P01';
 
+    // Check payment_requests
+    const { error: paymentsErr } = await supabase.from('payment_requests').select('id').limit(1);
+    result.paymentRequestsExists = !paymentsErr || paymentsErr.code !== '42P01';
+
+    // Check chat_messages
+    const { error: chatErr } = await supabase.from('chat_messages').select('id').limit(1);
+    result.chatMessagesExists = !chatErr || chatErr.code !== '42P01';
+
     return result;
   } catch (err: any) {
     console.error("Supabase table probing error:", err);
@@ -160,12 +180,12 @@ export async function getDbStatus(): Promise<DbTableStatus> {
 }
 
 // 1. Get Profile
-export async function fetchProfileFromSupabase(): Promise<UserProfileData | null> {
+export async function fetchProfileFromSupabase(userId: string): Promise<UserProfileData | null> {
   try {
     const { data, error } = await supabase
       .from('profile')
       .select('*')
-      .eq('id', 'current_user')
+      .eq('id', userId)
       .maybeSingle();
 
     if (error) {
@@ -196,10 +216,10 @@ export async function fetchProfileFromSupabase(): Promise<UserProfileData | null
 }
 
 // 2. Save Profile
-export async function saveProfileToSupabase(profile: UserProfileData): Promise<boolean> {
+export async function saveProfileToSupabase(userId: string, profile: UserProfileData): Promise<boolean> {
   try {
     const payload = {
-      id: 'current_user',
+      id: userId,
       name: profile.name,
       surname: profile.surname || '',
       avatar: profile.avatar || '',

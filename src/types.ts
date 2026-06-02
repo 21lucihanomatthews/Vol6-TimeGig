@@ -34,7 +34,7 @@ export interface ChatMessage {
   sender_id: string;
   recipient_id: string;
   content: string;
-  type: 'text' | 'image' | 'video' | 'voice';
+  type: 'text' | 'image' | 'video' | 'voice' | 'document';
   createdAt: string;
 }
 

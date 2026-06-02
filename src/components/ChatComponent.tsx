@@ -1,5 +1,5 @@
-import { useState, useRef, useEffect } from 'react';
-import { Send, Image as ImageIcon, Trash2, Edit2, Check, X, ShieldAlert, Mic, StopCircle } from 'lucide-react';
+import React, { useState, useRef, useEffect } from 'react';
+import { Send, Image as ImageIcon, Trash2, Edit2, Check, X, ShieldAlert, Mic, StopCircle, FileText, CheckCircle2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { ChatMessage } from '../types';
 import VoicePlayer from './VoicePlayer';
@@ -7,9 +7,10 @@ import VoicePlayer from './VoicePlayer';
 export default function ChatComponent() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [newMessage, setNewMessage] = useState('');
-  const [pendingFiles, setPendingFiles] = useState<{type: 'image' | 'video' | 'voice', url: string}[]>([]);
+  const [pendingFiles, setPendingFiles] = useState<{type: 'image' | 'video' | 'voice' | 'document', url: string, name?: string}[]>([]);
   const [isRecording, setIsRecording] = useState(false);
   const [duration, setDuration] = useState(0);
+  const [showSentToast, setShowSentToast] = useState(false);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const [isBlocked, setIsBlocked] = useState(false);
@@ -59,6 +60,7 @@ export default function ChatComponent() {
   const sendMessage = () => {
     if (isBlocked) return;
     
+    let sent = false;
     if (pendingFiles.length > 0) {
       pendingFiles.forEach(file => {
         const msg: ChatMessage = {
@@ -72,12 +74,9 @@ export default function ChatComponent() {
         setMessages(prev => [...prev, msg]);
       });
       setPendingFiles([]);
-      return;
-    }
-
-    if (!newMessage.trim()) return;
-
-    const msg: ChatMessage = {
+      sent = true;
+    } else if (newMessage.trim()) {
+      const msg: ChatMessage = {
         id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
         sender_id: 'me',
         recipient_id: 'other',
@@ -87,6 +86,13 @@ export default function ChatComponent() {
       };
       setMessages(prev => [...prev, msg]);
       setNewMessage('');
+      sent = true;
+    }
+
+    if (sent) {
+      setShowSentToast(true);
+      setTimeout(() => setShowSentToast(false), 2000);
+    }
   };
 
   const deleteMessage = (id: string) => {
@@ -111,13 +117,23 @@ export default function ChatComponent() {
     const availableSlots = 20 - pendingFiles.length;
     const filesToProcess = files.slice(0, availableSlots);
 
-    filesToProcess.forEach(file => {
+    filesToProcess.forEach((file: File) => {
       const isImage = file.type.startsWith('image/');
       const isVideo = file.type.startsWith('video/');
-      if (isImage || isVideo) {
+      const isDoc = file.type === 'application/pdf' || file.type.includes('word') || file.type.includes('sheet') || file.type.includes('text/plain');
+      
+      if (isImage || isVideo || isDoc) {
         const reader = new FileReader();
         reader.onload = () => {
-          setPendingFiles(prev => [...prev, { type: isImage ? 'image' : 'video', url: reader.result as string }]);
+          let type: 'image' | 'video' | 'document' = 'document';
+          if (isImage) type = 'image';
+          if (isVideo) type = 'video';
+          
+          setPendingFiles(prev => [...prev, { 
+            type, 
+            url: reader.result as string,
+            name: file.name
+          }]);
         };
         reader.readAsDataURL(file);
       }
@@ -177,6 +193,22 @@ export default function ChatComponent() {
                     <img src={m.content} alt="Shared" className="rounded-xl max-w-full max-h-64 object-contain shadow-sm" />
                   ) : m.type === 'video' ? (
                     <video src={m.content} controls className="rounded-xl max-w-full max-h-64 shadow-sm" />
+                  ) : m.type === 'document' ? (
+                    <a 
+                      href={m.content} 
+                      download 
+                      className={`flex items-center gap-3 p-3 rounded-xl border ${
+                        m.sender_id === 'me' ? 'bg-indigo-500 border-indigo-400 text-white' : 'bg-slate-50 border-slate-100 text-slate-800'
+                      }`}
+                    >
+                      <div className={`p-2 rounded-lg ${m.sender_id === 'me' ? 'bg-white/20' : 'bg-indigo-100'}`}>
+                        <FileText size={20} className={m.sender_id === 'me' ? 'text-white' : 'text-indigo-600'} />
+                      </div>
+                      <div className="flex flex-col">
+                        <span className="text-xs font-bold truncate max-w-[120px]">Proof of Payment</span>
+                        <span className="text-[10px] opacity-70">Click to download</span>
+                      </div>
+                    </a>
                   ) : (
                     <VoicePlayer url={m.content} isSender={m.sender_id === 'me'} />
                   )}
@@ -213,6 +245,11 @@ export default function ChatComponent() {
                     <img src={file.url} alt="Preview" className="w-full h-24 object-cover rounded-2xl shadow-sm border border-slate-100" />
                   ) : file.type === 'video' ? (
                     <video src={file.url} className="w-full h-24 object-cover rounded-2xl shadow-sm border border-slate-100" />
+                  ) : file.type === 'document' ? (
+                    <div className="w-full h-24 flex flex-col items-center justify-center bg-slate-50 rounded-2xl border border-slate-100 p-2 text-center">
+                      <FileText size={24} className="text-indigo-600 mb-1" />
+                      <span className="text-[10px] font-bold text-slate-600 truncate w-full px-2">{file.name || 'Document'}</span>
+                    </div>
                   ) : (
                     <div className="bg-slate-50/50 rounded-2xl p-1.5 border border-slate-100">
                       <VoicePlayer url={file.url} isSender={true} />
@@ -271,18 +308,25 @@ export default function ChatComponent() {
                   className="flex-1 flex items-center"
                 >
                   {!isBlocked && (
-                    <div className="flex items-center gap-0.5 px-1">
-                      <input type="file" accept="image/*,video/*" multiple ref={fileInputRef} onChange={handleFileChange} className="hidden" />
+                    <div className="flex items-center gap-0.5 px-1 text-slate-400">
+                      <input 
+                        type="file" 
+                        accept="image/*,video/*,application/pdf,.doc,.docx,.txt" 
+                        multiple 
+                        ref={fileInputRef} 
+                        onChange={handleFileChange} 
+                        className="hidden" 
+                      />
                       <button 
                         onClick={() => fileInputRef.current?.click()} 
-                        className="w-9 h-9 flex items-center justify-center text-slate-400 hover:text-indigo-600 transition-all rounded-full hover:bg-slate-50"
-                        title="Add media"
+                        className="w-9 h-9 flex items-center justify-center hover:text-indigo-600 transition-all rounded-full hover:bg-slate-50"
+                        title="Add media or document"
                       >
                         <ImageIcon size={18} />
                       </button>
                       <button 
                         onClick={startRecording}
-                        className="w-9 h-9 flex items-center justify-center text-slate-400 hover:text-red-500 transition-all rounded-full hover:bg-slate-50"
+                        className="w-9 h-9 flex items-center justify-center hover:text-red-500 transition-all rounded-full hover:bg-slate-50"
                         title="Voice note"
                       >
                         <Mic size={18} />
@@ -321,6 +365,22 @@ export default function ChatComponent() {
           </div>
         </div>
       </div>
+
+      <AnimatePresence>
+        {showSentToast && (
+          <motion.div 
+            initial={{ opacity: 0, y: 50, x: '-50%' }}
+            animate={{ opacity: 1, y: -100, x: '-50%' }}
+            exit={{ opacity: 0, y: -150, x: '-50%' }}
+            className="fixed bottom-20 left-1/2 z-[60] bg-slate-900 text-white px-6 py-3 rounded-full shadow-2xl flex items-center gap-3 border border-white/10"
+          >
+            <div className="w-6 h-6 bg-green-500 rounded-full flex items-center justify-center">
+              <CheckCircle2 size={16} className="text-white" />
+            </div>
+            <span className="text-sm font-bold tracking-tight">Message sent</span>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Shield, UploadCloud, Trash2, Image, Key, Check, Info, FileImage, Sparkles, RefreshCw, Database, AlertTriangle, Server, Code, Copy, ExternalLink, HardDrive } from 'lucide-react';
+import { Shield, UploadCloud, Trash2, Image, Key, Check, Info, FileImage, Sparkles, RefreshCw, Database, AlertTriangle, Server, Code, Copy, ExternalLink, HardDrive, CheckCircle2 } from 'lucide-react';
 import { DbTableStatus, SQL_SCHEMA } from '../lib/supabase';
 import AdminUsersSection from './AdminUsersSection';
 import AdminPaymentsSection from './AdminPaymentsSection';
@@ -13,6 +13,7 @@ interface AdminPanelProps {
   recheckDb: () => void;
   syncLocalToSupabase: () => Promise<void>;
   isSyncing: boolean;
+  onlineUsers: Set<string>;
 }
 
 export default function AdminPanel({ 
@@ -22,7 +23,8 @@ export default function AdminPanel({
   isCheckingDb,
   recheckDb,
   syncLocalToSupabase,
-  isSyncing
+  isSyncing,
+  onlineUsers
 }: AdminPanelProps) {
 
   const [isAdminLoggedIn, setIsAdminLoggedIn] = useState<boolean>(() => {
@@ -30,6 +32,13 @@ export default function AdminPanel({
   });
   const [adminPin, setAdminPin] = useState('');
   const [authError, setAuthError] = useState('');
+  const [showCopySuccess, setShowCopySuccess] = useState(false);
+
+  const copySchema = () => {
+    navigator.clipboard.writeText(SQL_SCHEMA);
+    setShowCopySuccess(true);
+    setTimeout(() => setShowCopySuccess(false), 2000);
+  };
   
   // ... rest of the original AdminPanel code (truncated for edit)
   const handleAdminLogin = (e: React.FormEvent) => {
@@ -80,11 +89,39 @@ export default function AdminPanel({
 
   return (
     <div id="admin-panel-container" className="w-full max-w-2xl mx-auto px-4 pb-24 pt-6 space-y-6">
-      <div className="bg-amber-100 p-4 rounded-xl border-amber-200 text-amber-900 text-xs font-bold">
-        📢 NOTE: Please run the SQL migration in /database_migration.sql in your Supabase SQL Editor to enable wallet and payment features.
-      </div>
+      {(!dbStatus?.profileExists || !dbStatus?.paymentRequestsExists) && (
+        <div className="bg-amber-50 p-7 rounded-[40px] border border-amber-200/50 shadow-sm relative overflow-hidden">
+          <div className="absolute top-0 right-0 w-32 h-32 bg-amber-200/20 rounded-bl-full -z-10" />
+          <div className="flex items-start gap-5">
+            <div className="w-12 h-12 bg-amber-200/40 rounded-3xl flex items-center justify-center shrink-0">
+              <AlertTriangle size={24} className="text-amber-800" />
+            </div>
+            <div className="space-y-3">
+              <h3 className="text-base font-black uppercase tracking-tight text-amber-900 line-clamp-1">Infrastructure Setup Required</h3>
+              <p className="text-xs font-medium leading-relaxed text-amber-800/80">
+                To enable the community registry and payment verification system, you must establish the PostgreSQL schema in Supabase.
+              </p>
+              <div className="flex items-center gap-3 pt-2">
+                 <button 
+                   onClick={copySchema}
+                   className="flex items-center gap-2 px-5 py-2.5 bg-amber-900 text-white rounded-2xl text-[11px] font-black uppercase tracking-wider hover:bg-amber-950 transition-all active:scale-95 shadow-lg shadow-amber-900/20"
+                 >
+                   {showCopySuccess ? <CheckCircle2 size={14} /> : <Copy size={14} />}
+                   {showCopySuccess ? 'Copied to Clipboard' : 'Copy SQL Schema'}
+                 </button>
+                 <button 
+                   onClick={() => recheckDb()}
+                   className="px-5 py-2.5 bg-white border border-amber-200 text-amber-900 rounded-2xl text-[11px] font-bold uppercase tracking-wider hover:bg-amber-100 transition-all active:scale-95"
+                 >
+                   Recheck
+                 </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
       
-      <AdminUsersSection />
+      <AdminUsersSection onlineUsers={onlineUsers} />
       <AdminPaymentsSection />
 
       {/* Admin Header */}
@@ -155,6 +192,8 @@ export default function AdminPanel({
               { name: 'gigs', status: dbStatus?.gigsExists, label: 'Gigs Inventory' },
               { name: 'seekers', status: dbStatus?.seekersExists, label: 'Seeker profiles' },
               { name: 'applied_gigs', status: dbStatus?.appliedGigsExists, label: 'Applied Gigs index' },
+              { name: 'payment_requests', status: dbStatus?.paymentRequestsExists, label: 'Payments Queue' },
+              { name: 'chat_messages', status: dbStatus?.chatMessagesExists, label: 'Chat Infrastructure' },
             ].map((tbl) => (
               <div 
                 key={tbl.name}
